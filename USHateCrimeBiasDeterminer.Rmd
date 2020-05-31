@@ -1,0 +1,162 @@
+---
+title: "US Crime-Rate Bias Determiner"
+author: "trumayanvoid"
+date: "5/31/2020"
+output: slidy_presentation
+runtime: shiny
+---
+```{r setup, include=FALSE, }
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Purpose
+
+Due to the highly-diverse population of United States combined with historicalism, national laws and policies, and culture, there is a high prevalence of hate crimes in the country.
+
+Dataset used was from 2018 dataset from  https://ucr.fbi.gov/hate-crime/2018/downloads/hate-crime-statistics-2018-tables.zip. 
+
+This application calculates the probability that you will be the target for a hate crime based on your several features. Also, this provides rankings for the number of victims and incidences per group/feature in 2018.
+
+
+## Functions and Tools
+
+1.Probability Determination based on Features
+
+```{r, echo=FALSE}
+
+shinyUI(fluidPage(
+   sidebarLayout(
+ sidebarPanel(selectInput("group1", "Closest Race/Ethnicity/Ancestry",
+                        c("White"= "white", "Black or African American"= "black",
+                          "American Indian or Alaska Native"= "native_a", "Asian"= "asian",
+                          "Native Hawaiian or Other Pacific Islander"= "native_h",
+                          "Multiple Races or Group"= "multiple_race", "Arab"= "arab", 
+                          "Hispanic or Latino"= "hispanic", "Other Race/Ethnicity/Ancestry"= "others_race")), 
+
+selectInput("group2", "Religious Affiliation/ Belief System", c("Jewish"= "jew", "Catholic"= "catholic", "Protestant" = "protestant", "Islamic" = "islam", "Other Religion"= "others_religion", 'Multiple Religions/Groups'= "multiple_religion","Mormon"= "mormon", "Jehova's Witness"= "jehova", "Eastern Orthodox (Russian, Greek, Other)"= "orthodox", "Other Christian"= "christian","Buddhist"= "buddhist", "Hindu"= "hindu", "Sikh" = "sikh", "Atheism/Agnoticism" = "aa", "None of the Above"= "none")),
+
+selectInput("group3", "Sexual Orientation", c("Gay (Male)"= "gay", "Lesbian"= "lesbian", "Lesbian, Gay, Bisexual, Transgender (Mixed Group)" = "mixed_so", "Heterosexual"= "hetero", "Bisexual"= "bisexual")),
+
+selectInput("group4", "Disability", c("Physical"= "physical", "Mental"= "mental", "None of the Above"= "none")),
+            
+selectInput("group5", "Gender", c("Male"= "male", "Female"= "female", "None of the Above"= "none")),
+            
+selectInput("group6", "Gender Identity", c("Transgender"= "trans", "Gender Non-Conforming"= "non", "None of the Above"= "none"))),
+
+mainPanel(plotOutput("histogram1"), h4("Probability:"), textOutput("histogram2"))
+
+)))
+
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+
+read.csv("Hate.csv") -> x
+apply(x, 2, as.numeric) -> x
+as.data.frame(t(x[,2:ncol(x)])) -> x
+mutate(x, Groups = rownames(x)) -> x
+colnames(x) = c("Incident", "Victims", "Victims/Incidents", "Groups")
+x -> hate
+sum(hate$Incident) -> total_incidents
+sum(hate$Victims) -> total_victims
+
+modelhate <- reactive({
+        hateinput1 <- filter(hate, Groups %in% input$group1) 
+        hateinput2 <- filter(hate, Groups %in% input$group2)
+        hateinput3 <- filter(hate, Groups %in% input$group3)
+        hateinput4 <- filter(hate, Groups %in% input$group4)
+        hateinput5 <- filter(hate, Groups %in% input$group5)
+        hateinput6 <- filter(hate, Groups %in% input$group6)
+        totalhate <-rbind(hateinput1, hateinput2, hateinput3, hateinput4, hateinput5, hateinput6) %>%
+        mutate(row= row_number())
+        colorRampPalette(c("darkgreen", "yellowgreen")) -> c
+        c(nrow(totalhate)) -> c
+        ggplot(data= totalhate, aes(x= reorder(Groups,row), y= Victims)) + geom_col(fill=c) + ylim(range(0, 2500)) + labs(x= "Group", y= "Victims in 7,036 incidences of hate crime")  
+            
+    })
+
+   modelbar <- reactive({
+        hateinput1 <- filter(hate, Groups %in% input$group1) 
+        hateinput2 <- filter(hate, Groups %in% input$group2)
+        hateinput3 <- filter(hate, Groups %in% input$group3)
+        hateinput4 <- filter(hate, Groups %in% input$group4)
+        hateinput5 <- filter(hate, Groups %in% input$group5)
+        hateinput6 <- filter(hate, Groups %in% input$group6)
+        totalhate2 <-rbind(hateinput1, hateinput2, hateinput3, hateinput4, hateinput5, hateinput6) 
+        totalhate2 <- totalhate2 %>% mutate(prop= (Victims/total_victims*100)) %>% select(Groups, prop) %>% summarize(sum(prop))
+        paste(signif(totalhate2[1,1],4), "%", sep = "")
+        
+        
+        
+    })
+output$histogram2 <- renderText({modelbar()})
+output$histogram1 <- renderPlot({modelhate()})
+```
+
+## 2. Ranking of Group/Features by Number of Victims and Incidences against them
+```{r, echo=FALSE}
+sidebarPanel(checkboxInput("check", "Show Rankings", value = TRUE),
+
+conditionalPanel(condition= "input.check == 1", selectInput("order", "Ranking order", c("Most Vulnerable to Least Vulnerable"= "dec", "Least Vulnerable to Most Vulnerable"= "inc")), sliderInput("rankslider", "Number of Groups to Show", 0,34, 10))
+)
+
+mainPanel(tabsetPanel(type= "tabs", tabPanel("Ranking by Incident", plotOutput("rank")),tabPanel("Ranking by Number of Victims", plotOutput("rank2"))))
+
+
+modelrank <- reactive({
+        hate <- hate %>% mutate(full = c("White", "Black/African American", "Asian", "Native Hawaiian/Pacific Islander", 
+                                         "Multiple Races/Group", "Arab", "Hispanic", "Latino", "Other Race", "Jewish",
+                                         "Catholic", "Protestant", "Muslim", "Other Religion", "Multiple Religions", "Mormon",
+                                         "Jehova's Witness", "Eastern Orthodox", "Other Christian", "Buddhist", "Hindu", 
+                                         "Sikh", "Atheism/Agnosticism/etc.", "Gay(Male)", "Lesbian", "LGBT(Mixed Group)",
+                                         "Heterosexual", "Bisexual", "Physically Disabled", "Mentally Disabled", "Male", "Female", "Transgender", "Gender Non-Conforming"))
+           
+        if (input$check == TRUE) {ifelse(input$order=="dec", (hate<- arrange(hate, desc(Incident), desc(Victims), full)), (hate<- arrange(hate, Incident, Victims, full)) )}
+        else {stop()}
+        
+        hate[1:input$rankslider,] -> hate
+        mutate(hate, row= row_number()) -> hate
+        colorRampPalette(c("red","yellow"))-> c
+        c(input$rankslider) -> c
+        ggplot(hate, aes(y= reorder(full, row), x= Incident)) + geom_col(fill= c) + labs(y= "Groups", x= "Number of Hate Crime Incidents Against A Group")
+     
+        
+       
+    })
+    
+    
+    modelrank2 <- reactive({
+        hate <- hate %>% mutate(full = c("White", "Black/African American", "Asian", "Native Hawaiian/Pacific Islander", 
+                                         "Multiple Races/Group", "Arab", "Hispanic", "Latino", "Other Race", "Jewish",
+                                         "Catholic", "Protestant", "Muslim", "Other Religion", "Multiple Religions", "Mormon",
+                                         "Jehova's Witness", "Eastern Orthodox", "Other Christian", "Buddhist", "Hindu", 
+                                         "Sikh", "Atheism/Agnosticism/etc.", "Gay(Male)", "Lesbian", "LGBT(Mixed Group)",
+                                         "Heterosexual", "Bisexual", "Physically Disabled", "Mentally Disabled", "Male", "Female", "Transgender", "Gender Non-Conforming"))
+        
+        if (input$check == TRUE) {ifelse(input$order=="dec", (hate<- arrange(hate, desc(Victims), desc(Incident), full)), (hate<- arrange(hate, Victims, Incident, full)) )}
+        else {stop()}
+        
+        hate[1:input$rankslider,] -> hate
+        mutate(hate, row= row_number()) -> hate
+        colorRampPalette(c("red","yellow"))-> c
+        c(input$rankslider) -> c
+        ggplot(hate, aes(y= reorder(full, row), x= Victims)) + geom_col(fill= c) + labs(y= "Groups", x= "Number of Hate Crime Victims in 2018")
+        
+    })
+  
+renderPlot({modelrank()}) -> output$rank
+renderPlot({modelrank2()}) -> output$rank2
+```
+
+## Notes and Disclaimer
+
+This application ONLY accounts for the statistics garnered in the United States in the year 2018.
+
+The term victim may refer to an individual, business/financial institution, government entity, religious organization, or society/public as a whole.
+
+This only accounts for the single-bias incidents in which offenses are motivated by a single bias for a group/feature; thus, there are overlaps in the choices of features due to the nature of the data.
+
+This application does not in any way intend to discriminate a group, country, and the population within that country. Information here are solely for reference.
+
+
+
